@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package v1alpha;
+
+option go_package = "v1alpha/envoy";
+
+message EnvoyConfig {
+  string name = 1;
+  Spec spec = 2;
+}
+
+message Spec {
+  repeated Listener listeners = 1;
+  repeated Cluster clusters = 2;
+}
+
+message Listener {
+  string name = 1;
+  string address = 2;
+  uint32 port = 3;
+  repeated Route routes = 4;
+}
+
+message Cluster {
+  string name = 1;
+  repeated Endpoint endpoints = 2;
+}
+
+message Route {
+  string name = 1;
+  string prefix = 2;
+  repeated string cluster_names = 3;
+}
+
+message Endpoint {
+  string address = 1;
+  uint32 port = 2;
+}
