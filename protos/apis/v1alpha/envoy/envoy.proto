@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package v1alpha;
+package envoy;
 
 option go_package = "v1alpha/envoy";
 
@@ -29,7 +29,7 @@ message Cluster {
 message Route {
   string name = 1;
   string prefix = 2;
-  repeated string cluster_names = 3;
+  repeated string clusters = 3;
 }
 
 message Endpoint {

@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"context"
 	"math"
 	"math/rand"
 	"os"
@@ -8,9 +9,10 @@ import (
 
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
+	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
 	"github.com/rs/zerolog"
 
-	"github.com/riverphillips/envoy-control-plane/internal/resources"
+	res "github.com/riverphillips/envoy-control-plane/api/v1alpha/resources"
 	"github.com/riverphillips/envoy-control-plane/internal/watcher"
 	"github.com/riverphillips/envoy-control-plane/internal/xdscache"
 )
@@ -23,7 +25,7 @@ type Processor struct {
 	cache           cache.SnapshotCache
 }
 
-func (p *Processor) ProcessFile(file watcher.NotifyMessage) {
+func (p *Processor) ProcessFile(ctx context.Context, file watcher.NotifyMessage) {
 	envoyConfig, err := parseYaml(file.FilePath)
 	if err != nil {
 		p.Logger.Err(err).Msg("Error parsing yaml")
@@ -36,10 +38,10 @@ func (p *Processor) ProcessFile(file watcher.NotifyMessage) {
 			lRoutes = append(lRoutes, lr.Name)
 		}
 
-		p.xdsCache.AddListener(l.Name, lRoutes, l.Address, l.Port)
+		p.xdsCache.AddListener(l.Name, l.Address, lRoutes, l.Port)
 
 		for _, r := range l.Routes {
-			p.xdsCache.AddRoute(r.Name, r.Prefix, r.ClusterNames)
+			p.xdsCache.AddRoute(r.Name, r.Prefix, r.Clusters)
 		}
 	}
 
@@ -51,24 +53,30 @@ func (p *Processor) ProcessFile(file watcher.NotifyMessage) {
 		}
 	}
 
-	snapshot := cache.NewSnapshot(
+	resources := map[resource.Type][]types.Resource{
+		resource.RouteType:    p.xdsCache.RouteContents(),
+		resource.ClusterType:  p.xdsCache.ClusterContents(),
+		resource.ListenerType: p.xdsCache.ListenerContents(),
+		resource.EndpointType: p.xdsCache.EndpointContents(),
+	}
+
+	snapshot, err := cache.NewSnapshot(
 		p.newSnapshotVersion(),
-		p.xdsCache.EndpointContents(),
-		p.xdsCache.ClusterContents(),
-		p.xdsCache.RouteContents(),
-		p.xdsCache.ListenerContents(),
-		[]types.Resource{},
-		[]types.Resource{},
+		resources,
 	)
+
+	if err != nil {
+		p.Logger.Err(err).Msg("Error creating snapshot")
+	}
 
 	if err = snapshot.Consistent(); err != nil {
 		p.Logger.Err(err).Msg("Inconsistent Snapshot")
 		return
 	}
 
-	p.Logger.Debug().Msg("Will serve snapshot")
+	p.Logger.Debug().Interface("Snapshot", snapshot).Msg("Will serve snapshot")
 
-	if err = p.cache.SetSnapshot(p.nodeId, snapshot); err != nil {
+	if err = p.cache.SetSnapshot(ctx, p.nodeId, snapshot); err != nil {
 		p.Logger.Err(err).Interface("snapshot", snapshot).Msg("Snapshot error")
 		os.Exit(1)
 	}
@@ -90,10 +98,10 @@ func New(cache cache.SnapshotCache, nodeId string, logger zerolog.Logger) *Proce
 		snapshotVersion: rand.Int63n(1000),
 		Logger:          logger,
 		xdsCache: xdscache.XDSCache{
-			Listeners: make(map[string]resources.Listener),
-			Clusters:  make(map[string]resources.Cluster),
-			Routes:    make(map[string]resources.Route),
-			Endpoints: make(map[string]resources.Endpoint),
+			Listeners: make(map[string]res.Listener),
+			Clusters:  make(map[string]res.Cluster),
+			Routes:    make(map[string]res.Route),
+			Endpoints: make(map[string]res.Endpoint),
 		},
 	}
 }
